@@ -1,4 +1,8 @@
+var STATUS_API = "http://10.0.2.2:3001";
+
+// state
 var currentStatus = null;
+var currentUserId = null;
 
 var statuses = [
   { label: "🟢 Online",         value: "online",   color: "#4CAF50" },
@@ -16,54 +20,145 @@ function statusByValue(val) {
   return null;
 }
 
-function onLoad() {
-  registerPluginActions({
-    openStatusPicker: function () {
-      simpleChat.api.showModal({
-        title: "Set your status",
-        options: statuses,
-        callback: "applyStatus"
-      });
-    },
+async function saveStatus(userId, status) {
+  try {
+    await simpleChat.api.httpRequest(
+      STATUS_API + "/status/" + userId,
+      "PUT",
+      { value: status.value, label: status.label, color: status.color },
+      { "Content-Type": "application/json" }
+    );
+  } catch (e) {
+    sendToFlutter({ type: "showSnackbar", message: "Failed to save status" });
+  }
+}
 
-    applyStatus: function (value) {
-      currentStatus = statusByValue(value);
+async function loadMyStatus(userId) {
+  try {
+    var resp = await simpleChat.api.httpRequest(
+      STATUS_API + "/status/" + userId,
+      "GET"
+    );
+    if (resp && resp.value) {
+      currentStatus = statusByValue(resp.value);
       if (currentStatus) {
-        simpleChat.api.updateChatMessageFont({
-          color: currentStatus.color
-        });
-        sendToFlutter({
-          type: "showSnackbar",
-          message: "Status: " + currentStatus.label
-        });
+        simpleChat.api.updateChatMessageFont({ color: currentStatus.color });
       }
-    },
-
-    clearStatus: function () {
-      currentStatus = null;
-      simpleChat.api.updateChatMessageFont({
-        color: "#222222"
-      });
-      sendToFlutter({
-        type: "showSnackbar",
-        message: "Status cleared"
-      });
-    },
-
-    showStatus: function () {
-      var msg = currentStatus
-        ? "Current status: " + currentStatus.label
-        : "No status set";
-      sendToFlutter({
-        type: "showSnackbar",
-        message: msg
-      });
     }
+  } catch (e) {
+  }
+}
+
+async function deleteStatus(userId) {
+  try {
+    await simpleChat.api.httpRequest(
+      STATUS_API + "/status/" + userId,
+      "DELETE"
+    );
+  } catch (e) {
+    // Ignore
+  }
+}
+
+async function fetchAllStatuses() {
+  try {
+    var resp = await simpleChat.api.httpRequest(
+      STATUS_API + "/statuses",
+      "GET"
+    );
+    return resp || [];
+  } catch (e) {
+    sendToFlutter({ type: "showSnackbar", message: "Failed to load statuses" });
+    return [];
+  }
+}
+
+// Actions
+
+function openStatusPicker() {
+  simpleChat.api.showModal({
+    title: "Set your status",
+    options: statuses,
+    callback: "applyStatus"
+  });
+}
+
+async function applyStatus(value) {
+  var status = statusByValue(value);
+  if (!status) return;
+
+  currentStatus = status;
+
+  // Visual feedback
+  simpleChat.api.updateChatMessageFont({ color: status.color });
+  sendToFlutter({ type: "showSnackbar", message: "Status: " + status.label });
+
+  // Persist to backend
+  if (currentUserId) {
+    await saveStatus(currentUserId, status);
+  }
+}
+
+async function clearStatus() {
+  currentStatus = null;
+  simpleChat.api.updateChatMessageFont({ color: "#222222" });
+  sendToFlutter({ type: "showSnackbar", message: "Status cleared" });
+
+  if (currentUserId) {
+    await deleteStatus(currentUserId);
+  }
+}
+
+function showCurrentStatus() {
+  var msg = currentStatus
+    ? "Current status: " + currentStatus.label
+    : "No status set";
+  sendToFlutter({ type: "showSnackbar", message: msg });
+}
+
+async function viewAllStatuses() {
+  var all = await fetchAllStatuses();
+  if (!all || all.length === 0) {
+    sendToFlutter({ type: "showSnackbar", message: "No one has set a status" });
+    return;
+  }
+
+  var options = [];
+  for (var i = 0; i < all.length; i++) {
+    var s = all[i];
+    options.push({
+      label: (s.label || s.value) + "  —  " + s.userId,
+      value: s.userId
+    });
+  }
+
+  simpleChat.api.showModal({
+    title: "Everyone's Status",
+    options: options,
+    callback: "onViewStatusSelect"
+  });
+}
+
+function onViewStatusSelect() {
+}
+
+// Plugin entry point
+
+function onLoad() {
+  currentUserId = "default_user";
+
+  registerPluginActions({
+    openStatusPicker:   openStatusPicker,
+    applyStatus:        applyStatus,
+    clearStatus:        clearStatus,
+    showStatus:         showCurrentStatus,
+    viewAllStatuses:    viewAllStatuses,
+    onViewStatusSelect: onViewStatusSelect
   });
 
   return {
     name: "Status",
-    version: "1.0.0",
+    version: "1.1.0",
     ui: {
       toolbarButtons: [
         {
@@ -97,9 +192,16 @@ function onLoad() {
         {
           type: "button",
           id: "status-show-btn",
-          label: "Show Current Status",
+          label: "Show My Status",
           icon: "info",
           action: "showStatus"
+        },
+        {
+          type: "button",
+          id: "status-view-all-btn",
+          label: "View All Statuses",
+          icon: "group",
+          action: "viewAllStatuses"
         },
         {
           type: "button",
