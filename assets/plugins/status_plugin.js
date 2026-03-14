@@ -144,8 +144,9 @@ function onViewStatusSelect() {
 
 // Plugin entry point
 
-function onLoad() {
-  currentUserId = "default_user";
+async function onLoad() {
+  var userResp = JSON.parse(await simpleChat.api.localDataRequest('user_id', null));
+  currentUserId = userResp.value || "default_user";
 
   registerPluginActions({
     openStatusPicker:   openStatusPicker,
