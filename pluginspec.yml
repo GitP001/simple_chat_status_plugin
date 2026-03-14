@@ -3,3 +3,5 @@ plugins:
     version: 1.0.0
     url: assets/plugins/status_plugin.js
     description: A plugin to set and display user availability status.
+    assets:
+      - assets/plugins/status_plugin.js
