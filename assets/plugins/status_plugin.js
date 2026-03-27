@@ -1,8 +1,8 @@
 var STATUS_API = "http://10.0.2.2:3001";
 
-// State
 var currentStatus = null;
 var currentUserId = null;
+var currentUsername = null;
 
 var statuses = [
   { label: "🟢 Online",         value: "online",   color: "#4CAF50" },
@@ -10,7 +10,8 @@ var statuses = [
   { label: "🔴 Do Not Disturb", value: "dnd",      color: "#F44336" },
   { label: "📚 Studying",       value: "studying", color: "#2196F3" },
   { label: "🎮 Gaming",         value: "gaming",   color: "#9C27B0" },
-  { label: "💼 Working",        value: "working",  color: "#607D8B" }
+  { label: "💼 Working",        value: "working",  color: "#607D8B" },
+  { label: "❌ Clear Status",    value: "clear",    color: "#222222" }
 ];
 
 
@@ -26,7 +27,12 @@ async function saveStatus(userId, status) {
     await simpleChat.api.httpRequest(
       STATUS_API + "/status/" + userId,
       "PUT",
-      { value: status.value, label: status.label, color: status.color },
+      {
+        value: status.value,
+        label: status.label,
+        color: status.color,
+        username: currentUsername || ""
+      },
       { "Content-Type": "application/json" }
     );
   } catch (e) {
@@ -75,6 +81,7 @@ async function fetchAllStatuses() {
 }
 
 // Actions
+
 function openStatusPicker() {
   simpleChat.api.showModal({
     title: "Set your status",
@@ -84,6 +91,16 @@ function openStatusPicker() {
 }
 
 async function applyStatus(value) {
+  if (value === "clear") {
+    currentStatus = null;
+    simpleChat.api.updateChatMessageFont({ color: "#222222" });
+    sendToFlutter({ type: "showSnackbar", message: "Status cleared" });
+    if (currentUserId) {
+      await deleteStatus(currentUserId);
+    }
+    return;
+  }
+
   var status = statusByValue(value);
   if (!status) return;
 
@@ -93,16 +110,6 @@ async function applyStatus(value) {
 
   if (currentUserId) {
     await saveStatus(currentUserId, status);
-  }
-}
-
-async function clearStatus() {
-  currentStatus = null;
-  simpleChat.api.updateChatMessageFont({ color: "#222222" });
-  sendToFlutter({ type: "showSnackbar", message: "Status cleared" });
-
-  if (currentUserId) {
-    await deleteStatus(currentUserId);
   }
 }
 
@@ -124,10 +131,10 @@ async function viewAllStatuses() {
   for (var i = 0; i < all.length; i++) {
     var s = all[i];
     var statusLabel = s.label || s.value || "unknown";
-    var user = s.userId || "unknown";
+    var displayName = s.username || s.userId || "unknown";
     options.push({
-      label: statusLabel + "  —  " + user,
-      value: user
+      label: displayName + "  —  " + statusLabel,
+      value: s.userId
     });
   }
 
@@ -145,7 +152,6 @@ function onViewStatusSelect() {
 // Plugin entry point
 
 async function onLoad() {
-  // Get current user ID from shared preferences
   try {
     var userResp = JSON.parse(await simpleChat.api.localDataRequest('user_id', null));
     currentUserId = userResp.value || "default_user";
@@ -153,12 +159,18 @@ async function onLoad() {
     currentUserId = "default_user";
   }
 
+  try {
+    var nameResp = JSON.parse(await simpleChat.api.localDataRequest('username', null));
+    currentUsername = nameResp.value || "Guest";
+  } catch (e) {
+    currentUsername = "Guest";
+  }
+
   await loadMyStatus(currentUserId);
 
   registerPluginActions({
     openStatusPicker:   openStatusPicker,
     applyStatus:        applyStatus,
-    clearStatus:        clearStatus,
     showStatus:         showCurrentStatus,
     viewAllStatuses:    viewAllStatuses,
     onViewStatusSelect: onViewStatusSelect
@@ -166,7 +178,7 @@ async function onLoad() {
 
   return {
     name: "Status",
-    version: "1.2.0",
+    version: "1.4.0",
     ui: {
       toolbarButtons: [
         {
